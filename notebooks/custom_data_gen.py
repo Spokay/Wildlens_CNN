@@ -31,11 +31,12 @@ class CustomDataGen(keras.utils.Sequence):
         self.train_ratio = train_ratio
         self.seed = seed
         self.load_data()
+        
         self.classes = {label: idx for idx, label in enumerate(set([item["label"] for item in self.data]))}
+        print(self.classes)
 
     
     def load_data(self):
-
         all_files = []
         for root, _, files in os.walk(self.data_folder):
             ext = os.path.splitext(files[0])[1]
@@ -47,20 +48,28 @@ class CustomDataGen(keras.utils.Sequence):
                     "path": os.path.join(root, file),
                     "label": subfolder
                 })
-
+    
         random.seed(self.seed)
         random.shuffle(all_files)
-        
-
-        split_idx = int(len(all_files) * self.train_ratio)
-        
-
+    
+        # Ensure all labels are present in both splits
+        label_counts = {label: 0 for label in set([item["label"] for item in all_files])}
+        for item in all_files:
+            label_counts[item["label"]] += 1
+    
+        train_files = []
+        test_files = []
+        for label, count in label_counts.items():
+            label_files = [item for item in all_files if item["label"] == label]
+            split_idx = int(count * self.train_ratio)
+            train_files.extend(label_files[:split_idx])
+            test_files.extend(label_files[split_idx:])
+    
         if self.split == "train":
-            base_files = all_files[:split_idx]
+            base_files = train_files
         else:
-            base_files = all_files[split_idx:]
-        
-
+            base_files = test_files
+    
         self.data = []
         for file in base_files:
             if self.split == "train" and file["label"] in self.aug_len:
@@ -71,7 +80,7 @@ class CustomDataGen(keras.utils.Sequence):
                     self.data.append(file)
             else:
                 self.data.append(file)
-        
+    
         random.shuffle(self.data)
 
     def __len__(self):
@@ -91,7 +100,8 @@ class CustomDataGen(keras.utils.Sequence):
             img = self.pipeline(img)
             batch_images.append(img)
             batch_labels.append(self.classes[item["label"]])
-
+        
+        batch_labels = tf.keras.utils.to_categorical(batch_labels, num_classes=len(self.classes))
         return np.array(batch_images), np.array(batch_labels)
     
     def on_epoch_end(self):
